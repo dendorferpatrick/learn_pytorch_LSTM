@@ -83,14 +83,7 @@ if args.visdom_port:
         opts=dict(title="Data set", markers=False),
     )
 
-data_X, data_Y = create_dataset(dataset, look_back, look_forward)
-
-# Slit data to train and test data
-train_X = data_X[:train_size]
-train_Y = data_Y[:train_size]
-test_X = data_X[train_size:]
-test_Y = data_Y[train_size:]
-
+train_X, train_Y, test_X, test_Y = create_dataset(dataset,train_size,  look_back, look_forward)
 # Convert numpy array to PyTorch tensor
 train_X = train_X.reshape(-1, 1, look_back)
 train_Y = train_Y.reshape(-1, 1, look_forward)
@@ -181,7 +174,7 @@ for name in models:
     test[name] = net[name](test_x)
     loss = criterion(test[name], test_y) 
     logging.info('{}: Loss: {:.5f}'.format(name, loss.item()))
-   
+print(test_x[0])  
 if args.visdom_port:
     #itest_data=test_y.view(-1).data.cpu().numpy()
     win= vis.line(Y=test_y.view(-1).data.cpu().numpy(), 

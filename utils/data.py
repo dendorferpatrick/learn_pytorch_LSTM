@@ -31,17 +31,25 @@ def generate_data(data, sample_size):
     else: 
         print("No valid dataset")
 
-def create_dataset(dataset, look_back, look_forward, normalize=True):
+def create_dataset(dataset,train_size, look_back, look_forward, normalize=True):
+    # Slit data to train and test data
+    datatrain= dataset[:train_size]
+    datatest = dataset[train_size:]
     if normalize:
         # Normalize data to [0, 1]
-        max_value = np.max(dataset)
-        min_value = np.min(dataset)   
+        max_value = np.max(datatrain)
+        min_value = np.min(datatrain)   
         scalar = max_value - min_value
-        dataset = list(map(lambda x: (x-min_value) / scalar, dataset))
-    dataX, dataY=[], []
-    for i in range(len(dataset) - look_back- look_forward):
-        a = dataset[i:(i + look_back)]
-        dataX.append(a)
-        dataY.append(dataset[i + look_back:(i + look_back+look_forward)])
-    return np.array(dataX), np.array(dataY)
+        datatrain = list(map(lambda x: (x-min_value) / scalar, datatrain ))
+        datatest = list(map(lambda x: (x-min_value) / scalar, datatest))
+        train_X, train_Y,test_X, test_Y =[], [], [],[]
+    for i in range(len(datatrain) - look_back- look_forward):
+        a = datatrain[i:(i + look_back)]
+        train_X.append(a)
+        train_Y.append(datatrain[i + look_back:(i + look_back+look_forward)])
+    for i in range(len(datatest) - look_back- look_forward):
+        a = datatest[i:(i + look_back)]
+        test_X.append(a)
+        test_Y.append(datatest[i + look_back:(i + look_back+look_forward)]) 
+    return np.array(train_X), np.array(train_Y), np.array(test_X), np.array(test_Y)
 
