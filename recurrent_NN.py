@@ -15,31 +15,7 @@ from torch.autograd import Variable
 import time
 import logging
 import datetime 
-def initialize_logger(output_dir):
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-     
-    # create console handler and set level to info
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s -%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
- 
-    # create error file handler and set level to error
-    handler = logging.FileHandler(os.path.join(output_dir, "error.log"),"w", encoding=None, delay="true")
-    handler.setLevel(logging.ERROR)
-    formatter = logging.Formatter("%(asctime)s -%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
- 
-    # create debug file handler and set level to debug
-    handler = logging.FileHandler(os.path.join(output_dir, "all.log"),"w")
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s -%(levelname)s - %(message)s")    
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
+from utils.initialize_logger import init_logger
 # current directory
 direct= '/'.join(os.getcwd().split('/')[:-1]) 
 
@@ -171,7 +147,7 @@ class model(nn.Module):
         return outputs
 
 # initialize neural nets
-initialize_logger(model_path)
+init_logger(model_path)
 net={}
 models=['LSTM', 'RNN', 'GRU']
 optimizer={}
@@ -210,6 +186,6 @@ logging.info('-'* 20 + ' Evaluation Test ' +'-'*20)
 for name in models: 
     test[name] = net[name](test_x)
     loss = criterion(test[name], test_y)
-    torch.save(name[name], os.path.join(model_path, name) )
+    torch.save(net[name], os.path.join(model_path, name) )
     logging.info('{}: Loss: {:.5f}'.format(name, loss.item()))
 
