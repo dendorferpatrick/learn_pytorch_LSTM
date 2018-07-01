@@ -13,7 +13,13 @@ def generate_data(data, sample_size):
     if data=='sine':    
         random_offset = np.random.randint(0, sample_size)
         X = np.arange(sample_size)
-        Y = noisy(sine_2(X + random_offset)).astype('float32')
+        #Y = noisy(sine_2(X + random_offset)).astype('float32')
+        Y=np.sin( X*2*np.pi/60. ).astype('float32')
+        return Y
+    if data=='linear':    
+        random_offset = np.random.randint(0, 10)
+        X = np.arange(sample_size)
+        Y = (random_offset + X* np.random.rand()).astype('float32')
         return Y
     if data=='passenger': 
         X=np.genfromtxt("data/international-airline-passengers.csv", skip_footer= 1, usecols=1, delimiter=',', skip_header=1) 
@@ -31,25 +37,37 @@ def generate_data(data, sample_size):
     else: 
         print("No valid dataset")
 
-def create_dataset(dataset,train_size, look_back, look_forward, normalize=True):
+def create_dataset(dataset,train_size, look_back, look_forward, difference= False, normalize=True):
     # Slit data to train and test data
-    datatrain= dataset[:train_size]
-    datatest = dataset[train_size:]
+    datatrain= np.array(dataset[:train_size])
+    datatest = np.array(dataset[train_size:])
+
     if normalize:
         # Normalize data to [0, 1]
         max_value = np.max(datatrain)
         min_value = np.min(datatrain)   
         scalar = max_value - min_value
-        datatrain = list(map(lambda x: (x-min_value) / scalar, datatrain ))
-        datatest = list(map(lambda x: (x-min_value) / scalar, datatest))
-        train_X, train_Y,test_X, test_Y =[], [], [],[]
-    for i in range(len(datatrain) - look_back- look_forward):
-        a = datatrain[i:(i + look_back)]
-        train_X.append(a)
-        train_Y.append(datatrain[i + look_back:(i + look_back+look_forward)])
-    for i in range(len(datatest) - look_back- look_forward):
-        a = datatest[i:(i + look_back)]
-        test_X.append(a)
-        test_Y.append(datatest[i + look_back:(i + look_back+look_forward)]) 
-    return np.array(train_X), np.array(train_Y), np.array(test_X), np.array(test_Y)
+        datatrain = np.array(list(map(lambda x: (x-min_value) / scalar, datatrain )))
+        datatest = np.array(list(map(lambda x: (x-min_value) / scalar, datatest)))
+    train_X, train_Y,test_X, test_Y =[], [], [],[]
+    if difference:
+        for i in range(len(datatrain) - look_back- look_forward-1):
+            a = datatrain[i+1:(i+1 + look_back)]- datatrain[i:(i + look_back)]
+            train_X.append(a)
+            train_Y.append(datatrain[i+1 + look_back:(i+1 + look_back+look_forward)]-datatrain[i+ look_back:(i+ look_back+look_forward)])
+        for i in range(len(datatest) - look_back- look_forward- 1):
+            a = datatest[i+1:(i+1 + look_back)]-datatest[i:(i + look_back)]
+            test_X.append(a)
+            test_Y.append(datatest[i+1 + look_back:(i+1 + look_back+look_forward)]-datatest[i + look_back:(i + look_back+look_forward)]) 
+
+    else:
+        for i in range(len(datatrain) - look_back- look_forward):
+            a = datatrain[i:(i + look_back)]
+            train_X.append(a)
+            train_Y.append(datatrain[i + look_back:(i + look_back+look_forward)])
+        for i in range(len(datatest) - look_back- look_forward):
+            a = datatest[i:(i + look_back)]
+            test_X.append(a)
+            test_Y.append(datatest[i + look_back:(i + look_back+look_forward)]) 
+    return np.array(train_X).T, np.array(train_Y).T, np.array(test_X).T, np.array(test_Y).T
 
