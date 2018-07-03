@@ -1,231 +1,249 @@
-# coding: utf-8
+# load packages and dependencies
 import argparse
-import time
-import math
-import os
+import os 
+import numpy as np
+import pandas as pd
+import random
 import torch
-import torch.nn as nn
-import torch.onnx
+from torch import nn
+from torch.autograd import Variable
+from NN import model
+import time
+import logging
+import datetime 
+from utils.initialize_logger import init_logger
+from utils.data import create_dataset, generate_data 
 
-import data
-import model
 
-parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./data/wikitext-2',
-                    help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
-parser.add_argument('--emsize', type=int, default=200,
-                    help='size of word embeddings')
-parser.add_argument('--nhid', type=int, default=200,
-                    help='number of hidden units per layer')
-parser.add_argument('--nlayers', type=int, default=2,
-                    help='number of layers')
-parser.add_argument('--lr', type=float, default=20,
-                    help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.25,
-                    help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=40,
-                    help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=20, metavar='N',
-                    help='batch size')
-parser.add_argument('--bptt', type=int, default=35,
-                    help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.2,
-                    help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--tied', action='store_true',
-                    help='tie the word embedding and softmax weights')
-parser.add_argument('--seed', type=int, default=1111,
-                    help='random seed')
-parser.add_argument('--cuda', action='store_true',
-                    help='use CUDA')
-parser.add_argument('--log-interval', type=int, default=200, metavar='N',
-                    help='report interval')
-parser.add_argument('--save', type=str, default='model.pt',
-                    help='path to save the final model')
-parser.add_argument('--onnx-export', type=str, default='',
-                    help='path to export the final model in onnx format')
+parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description="""This notebook demosntrates the three most common types of recurrent neural networks. Namely, we focus on:
+Simple recurrent neural network (RNN) Gated recurrent units (GRU) Long short term memory netowrk (LSTM) 
+The models are nicely demonstrated and explained in the following post: 
+http://colah.github.io/posts/2015-08-Understanding-LSTMs/ 
+The models are trained on a one dimensional time series of a noisy sin-wave.""")
+parser.add_argument('--train', dest="train", default=False, action='store_true',
+                    help='an integer for the accumulator')
+parser.add_argument('--test',  dest='test', type=str,
+                    default=False,
+                    help='sum the integers (default: find the max)')
+parser.add_argument('--lb', dest='history_window',  type=int, default=200, help='look back time window') 
+parser.add_argument('--lf' , dest='prediction_window', type=int, default =  1, help='prediction time horizont') 
+parser.add_argument('--d', dest='data', type=str, default='sine',  help='data set to be used')
+parser.add_argument('--hs', dest='hidden_size',type=int,  default=150, help='Number of hidden states')  
+parser.add_argument('--nl',dest='number_layer', type=int, default = 3, help='number of RNN layers') 
+parser.add_argument('--dr',dest='dropout_rate', type=float, default= 0.3, help='dropout rate for training') 
+parser.add_argument('--e', dest='epochs', type=int, default=1000, help='number of training epochs')
+parser.add_argument('--vp', dest='visdom_port',type=int,  default=False, help='port of visdom server')
+parser.add_argument('--ft', dest='future',type=int,  default=10, help='future time window')
+
 args = parser.parse_args()
+print(args)
 
-# Set the random seed manually for reproducibility.
-torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-
-device = torch.device("cuda" if args.cuda else "cpu")
-
-###############################################################################
-# Load data
-###############################################################################
-
-corpus = data.Corpus(args.data)
-
-# Starting from sequential data, batchify arranges the dataset into columns.
-# For instance, with the alphabet as the sequence and batch size 4, we'd get
-# ┌ a g m s ┐
-# │ b h n t │
-# │ c i o u │
-# │ d j p v │
-# │ e k q w │
-# └ f l r x ┘.
-# These columns are treated as independent by the model, which means that the
-# dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
-# batch processing.
-
-def batchify(data, bsz):
-    # Work out how cleanly we can divide the dataset into bsz parts.
-    nbatch = data.size(0) // bsz
-    # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    data = data.narrow(0, 0, nbatch * bsz)
-    # Evenly divide the data across the bsz batches.
-    data = data.view(bsz, -1).t().contiguous()
-    return data.to(device)
-
-eval_batch_size = 10
-train_data = batchify(corpus.train, args.batch_size)
-val_data = batchify(corpus.valid, eval_batch_size)
-test_data = batchify(corpus.test, eval_batch_size)
-
-###############################################################################
-# Build the model
-###############################################################################
-
-ntokens = len(corpus.dictionary)
-model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
-
-criterion = nn.CrossEntropyLoss()
-
-###############################################################################
-# Training code
-###############################################################################
-
-def repackage_hidden(h):
-    """Wraps hidden states in new Tensors, to detach them from their history."""
-    if isinstance(h, torch.Tensor):
-        return h.detach()
-    else:
-        return tuple(repackage_hidden(v) for v in h)
+if args.visdom_port:
+    import visdom
+    
+    #os.system('python -m visdom.server -port {} &'.format(args.visdom_port))
+    vis = visdom.Visdom(port=args.visdom_port)
+    vis.close()
 
 
-# get_batch subdivides the source data into chunks of length args.bptt.
-# If source is equal to the example output of the batchify function, with
-# a bptt-limit of 2, we'd get the following two Variables for i = 0:
-# ┌ a g m s ┐ ┌ b h n t ┐
-# └ b h n t ┘ └ c i o u ┘
-# Note that despite the name of the function, the subdivison of data is not
-# done along the batch dimension (i.e. dimension 1), since that was handled
-# by the batchify function. The chunks are along dimension 0, corresponding
-# to the seq_len dimension in the LSTM.
+# current directory
+direct= '/'.join(os.getcwd().split('/')[:-1]) 
 
-def get_batch(source, i):
-    seq_len = min(args.bptt, len(source) - 1 - i)
-    data = source[i:i+seq_len]
-    target = source[i+1:i+1+seq_len].view(-1)
-    return data, target
+start_time       = f"{datetime.datetime.now():%Y-%m-%d-%H-%M-%S}"
+
+# create dir for model
+model_dir = "models"
+if not os.path.exists(model_dir):
+    os.makedirs(model_dir)
+model_path = os.path.join(model_dir, start_time)
+os.makedirs(model_path)
+
+use_gpu=torch.cuda.is_available()
+print("GPU is available: ",  use_gpu)
+
+# Parameters
+features= 1 
+np.random.seed(0)
+look_back=args.history_window        # historic time window
+look_forward=args.prediction_window    # prediction time horizont
+hidden_size=args.hidden_size # dimension of hidden variable h
+num_layer=args.number_layer       # number of LSTM layers
+dropout=args.dropout_rate   # dropout rate after each LSTM layer
+future = args.future
+epochs=args.epochs
+
+sample_size=3000
+dataset=generate_data(args.data , sample_size)
+train_size = int(len(dataset) * 0.7)
+test_size = len(dataset) - train_size
+
+if args.visdom_port:
+    vis.line(
+        Y=dataset,
+        X=np.arange(len(dataset)), 
+        opts=dict(title="Data set", markers=False),
+    )
+
+train_X, train_Y, test_X, test_Y = create_dataset(dataset,train_size,  look_back, look_forward)
+# Convert numpy array to PyTorch tensor
+
+train_X = train_X.reshape(look_back, -1, features)
+train_Y = train_Y.reshape(features, -1, look_forward)
+test_X = test_X.reshape(look_back, -1, features)
+test_Y = test_Y.reshape(features, -1, look_forward)
+
+train_x = torch.from_numpy(train_X).cuda()
+train_y = torch.from_numpy(train_Y).cuda()
+test_x = torch.from_numpy(test_X).cuda()
+test_y = torch.from_numpy(test_Y).cuda()
+
+print("Shape train data X: ", train_x.size())
+print("Shape train data Y: ", train_y.size())
+print("Shape test data X: ", test_x.size())
+print("Shape test data Y: " , test_y.size())
+# initialize neural nets
+init_logger(model_path)
+
+def test(net, models, x=test_x, y=test_y):
+
+    test={}
+    
+    logging.info('-'* 20 + ' Evaluation Test ' +'-'*20)
+    for name in models: 
+        net[name].eval()
+
+        test[name] = net[name].predict(x[:,0,0].clone().view(-1, 1, 1), future)
+        print("{} future".format(name), criterion(y[0,:future,0].clone().cuda().type('torch.FloatTensor') , torch.from_numpy(test[name].copy()).cuda().type('torch.FloatTensor')).item())
+        #loss = criterion(test[name], test_y[:,0,0]) 
+        #logging.info('{}: Loss: {:.5f}'.format(name, loss.item()))
+
+    if args.visdom_port:
+        win2= vis.line(Y=y[0,:,0].data.cpu().numpy(), 
+        
+                    X= np.arange(y.size(1)), 
+    
+        name="real",
+        opts=dict(showlegend=True),  
+        
+        ) 
+    #test_y[0].view(-1).data.cpu().numpy()
+
+        for name in models: 
+            h0=torch.zeros(net[name].num_layers,x.size(1), net[name].hidden_size).cuda()
+        
+            data, _ =net[name](x, h0)
+
+            vis.line(Y=data[0, :, 0].data.cpu().numpy(), 
+                    X= np.arange(y.size(1)), 
+                    name=name, 
+                    win=win2,
+                    update='new', 
+                    opts=dict(showlegend=True), ) 
 
 
-def evaluate(data_source):
-    # Turn on evaluation mode which disables dropout.
-    model.eval()
-    total_loss = 0.
-    ntokens = len(corpus.dictionary)
-    hidden = model.init_hidden(eval_batch_size)
-    with torch.no_grad():
-        for i in range(0, data_source.size(0) - 1, args.bptt):
-            data, targets = get_batch(data_source, i)
-            output, hidden = model(data, hidden)
-            output_flat = output.view(-1, ntokens)
-            total_loss += len(data) * criterion(output_flat, targets).item()
-            hidden = repackage_hidden(hidden)
-    return total_loss / len(data_source)
+        win= vis.line(Y=y[0,:future,0].data.cpu().numpy(), 
+        X=np.arange(future),
+        name="real",
+        opts=dict(showlegend=True),  
+        
+        ) 
+    
+    #test_y[0].view(-1).data.cpu().numpy()
+
+        for name in models: 
+            
+            vis.line(Y=test[name], 
+                    X=np.arange(future), 
+                    name=name, 
+                    win=win,
+                    update='new', 
+                    opts=dict(showlegend=True), ) 
 
 
-def train():
-    # Turn on training mode which enables dropout.
-    model.train()
-    total_loss = 0.
-    start_time = time.time()
-    ntokens = len(corpus.dictionary)
-    hidden = model.init_hidden(args.batch_size)
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        data, targets = get_batch(train_data, i)
-        # Starting each batch, we detach the hidden state from how it was previously produced.
-        # If we didn't, the model would try backpropagating all the way to start of the dataset.
-        hidden = repackage_hidden(hidden)
-        model.zero_grad()
-        output, hidden = model(data, hidden)
-        loss = criterion(output.view(-1, ntokens), targets)
-        loss.backward()
+# testing
+if args.train:
+    batch_size=40
+    net={} 
+    models=[  'RNN', 'GRU'] #'RNN',,  'GRU' #'LSTM',
+    optimizer={} 
+    for name in models: 
+        net[name]=model(name, features, hidden_size, look_forward, num_layer, dropout, batch_size).cuda() 
+        optimizer[name] = torch.optim.Adam(net[name].parameters(), lr=1e-3, weight_decay=1e-4)
 
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        for p in model.parameters():
-            p.data.add_(-lr, p.grad.data)
+    logging.info('Model: {}'.format(models) ) 
+    criterion = nn.MSELoss()
+    logging.info(net)
+    logging.info("Training data set: {}".format(args.data))
+    t0= time.time()
+    steps= epochs/10
 
-        total_loss += loss.item()
+   
+    losses={}
+    for name in models: 
+         losses[name]=[]
+    for e in range(epochs):
+        
+        
+        for batch in np.arange(0, train_x.size(1), batch_size):
+            var_x = Variable(train_x[:,batch:batch+batch_size,:])
+            var_y = Variable(train_y[:,batch:batch+batch_size,:])
+            for name in models:
+                h0= torch.zeros(net[name].num_layers,var_x.size(1), net[name].hidden_size).cuda()
+                out = net[name](var_x, h0)[0]
+                
+                loss = criterion(out, var_y)
+                optimizer[name].zero_grad()
+                loss.backward()
+                losses[name].append(loss.item())
+                optimizer[name].step()    
+                if (e+1) % steps == 0: 
+                    #logging.info('{}: Loss: {:.5f}'.format(name, loss.item()))
+                    """
+                    if args.visdom_port:
+                        vis.line(
+                        X=np.arange(len(losses[name])),
+                        Y=np.array(losses[name]),
+                        win=name,     
+                        opts=dict(
+                            ytype='log', 
+                            ylabel="MSE error", 
+                            xlabel="Epochs", 
 
-        if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss / args.log_interval
-            elapsed = time.time() - start_time
-            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, lr,
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
-            total_loss = 0
-            start_time = time.time()
+                            title="Losses {}".format(name),
+                            ), 
+                        )
+                    """
+        dt=time.time()-t0
+        t0=dt+t0
+        if (e+1)%steps==0:
+            for name in models:
+                net[name].eval()
+                var_x = Variable(train_x)
+                var_y = Variable(train_y)
+                h0= torch.zeros(net[name].num_layers,var_x.size(1), net[name].hidden_size).cuda()
+                
+                out = net[name](var_x, h0)[0]
+                print(name, criterion(out, var_y).item() )
+                net[name].train()
+            test(net, models)
+            for name in models:
+                net[name].train()
+             
+        logging.info('-'* 20 + ' Epoch {} - {:.2f}% - Time {:.2f}s '.format(e+1, (e+1)/epochs*100, dt) +'-'*20)
+    
+    
+    for name in models:
+        torch.save(net[name], os.path.join(model_path, name))
+        logging.info("{} saved to {}".format(name, model_path))	
 
-
-def export_onnx(path, batch_size, seq_len):
-    print('The model is also exported in ONNX format at {}'.
-          format(os.path.realpath(args.onnx_export)))
-    model.eval()
-    dummy_input = torch.LongTensor(seq_len * batch_size).zero_().view(-1, batch_size).to(device)
-    hidden = model.init_hidden(batch_size)
-    torch.onnx.export(model, (dummy_input, hidden), path)
-
-
-# Loop over epochs.
-lr = args.lr
-best_val_loss = None
-
-# At any point you can hit Ctrl + C to break out of training early.
-try:
-    for epoch in range(1, args.epochs+1):
-        epoch_start_time = time.time()
-        train()
-        val_loss = evaluate(val_data)
-        print('-' * 89)
-        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                           val_loss, math.exp(val_loss)))
-        print('-' * 89)
-        # Save the model if the validation loss is the best we've seen so far.
-        if not best_val_loss or val_loss < best_val_loss:
-            with open(args.save, 'wb') as f:
-                torch.save(model, f)
-            best_val_loss = val_loss
-        else:
-            # Anneal the learning rate if no improvement has been seen in the validation dataset.
-            lr /= 4.0
-except KeyboardInterrupt:
-    print('-' * 89)
-    print('Exiting from training early')
-
-# Load the best saved model.
-with open(args.save, 'rb') as f:
-    model = torch.load(f)
-    # after load the rnn params are not a continuous chunk of memory
-    # this makes them a continuous chunk, and will speed up forward pass
-    model.rnn.flatten_parameters()
-
-# Run on test data.
-test_loss = evaluate(test_data)
-print('=' * 89)
-print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-    test_loss, math.exp(test_loss)))
-print('=' * 89)
-
-if len(args.onnx_export) > 0:
-    # Export the model in ONNX format.
-    export_onnx(args.onnx_export, batch_size=1, seq_len=args.bptt)
+if args.test:
+    model_path=os.path.join("models", args.test) 
+    net={}
+    models=['LSTM', 'RNN', 'GRU']
+    for name in models: 
+        net[name]=torch.load(os.path.join(model_path, name))
+        net[name]=net[name].eval()
+        logging.info("{} loaded".format(name))
+    criterion= nn.MSELoss() 
+# testing 
+test(net, models)
