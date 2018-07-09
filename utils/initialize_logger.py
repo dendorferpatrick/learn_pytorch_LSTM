@@ -2,7 +2,7 @@ import os
 import logging
 def init_logger(output_dir):
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
     # create console handler and set level to info
     handler = logging.StreamHandler()
@@ -24,3 +24,4 @@ def init_logger(output_dir):
     formatter = logging.Formatter("%(asctime)s -%(levelname)s - %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+    return logger

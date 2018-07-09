@@ -13,8 +13,8 @@ def generate_data(data, sample_size):
     if data=='sine':    
         random_offset = np.random.randint(0, sample_size)
         X = np.arange(sample_size)
-        #Y = noisy(sine_2(X + random_offset)).astype('float32')
-        Y=np.sin( X*2*np.pi/60. ).astype('float32')
+        Y = noisy(sine_2(X + random_offset)).astype('float32')
+        #Y=np.sin( X*2*np.pi/60. ).astype('float32')
         return Y
     if data=='linear':    
         random_offset = np.random.randint(0, 10)
@@ -49,7 +49,7 @@ def create_dataset(dataset,train_size, look_back, look_forward, difference= Fals
         scalar = max_value - min_value
         datatrain = np.array(list(map(lambda x: (x-min_value) / scalar, datatrain )))
         datatest = np.array(list(map(lambda x: (x-min_value) / scalar, datatest)))
-    train_X, train_Y,test_X, test_Y =[], [], [],[]
+    train_X, train_Y,val_X, val_Y =[], [], [],[]
     if difference:
         for i in range(len(datatrain) - look_back- look_forward-1):
             a = datatrain[i+1:(i+1 + look_back)]- datatrain[i:(i + look_back)]
@@ -64,10 +64,12 @@ def create_dataset(dataset,train_size, look_back, look_forward, difference= Fals
         for i in range(len(datatrain) - look_back- look_forward):
             a = datatrain[i:(i + look_back)]
             train_X.append(a)
-            train_Y.append(datatrain[i + look_back:(i + look_back+look_forward)])
+            train_Y.append(datatrain[i + 1:(i + look_back+1)])
         for i in range(len(datatest) - look_back- look_forward):
             a = datatest[i:(i + look_back)]
-            test_X.append(a)
-            test_Y.append(datatest[i + look_back:(i + look_back+look_forward)]) 
-    return np.array(train_X).T, np.array(train_Y).T, np.array(test_X).T, np.array(test_Y).T
+            val_X.append(a)
+            val_Y.append(datatest[i + 1:(i + look_back+1)])
+        test_X=datatest[:-1]
+        test_Y=datatest[1:]
+    return np.array(train_X).T, np.array(train_Y).T, np.array(test_X), np.array(test_Y), np.array(val_X).T, np.array(val_Y).T
 
