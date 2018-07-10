@@ -16,7 +16,7 @@ from utils.data import create_dataset, generate_data
 
 import visdom
 
-def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, vis_env):
+def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env):
     result={}
     if args.visdom_port:
         
@@ -195,7 +195,10 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
                 #h0= torch.zeros(net.num_layers,var_x.size(1), net.hidden_size).cuda()
 
                 out = net(var_x)
-                loss = criterion(out, var_y)
+                if train_mode=="m2m":
+                    loss = criterion(out, var_y)
+                elif train_mode=="m2o":
+                    loss = criterion(out[-1], var_y[-1])
                 optimizer.zero_grad()
                 loss.backward()
                 
@@ -228,7 +231,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
             
             print('-'* 20 + ' Epoch {} - {:.2f}% - Time {:.2f}s '.format(e+1, (e+1)/epochs*100, dt) +'-'*20)
             if (e+1)% np.maximum(1, int(epochs*steps))==0:
-                val(net, model_type, e+1)
+                #val(net, model_type, e+1)
                 test(net, model_type, e+1)
         if args.observe:
             

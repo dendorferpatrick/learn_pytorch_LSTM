@@ -44,6 +44,8 @@ parser.add_argument('--samp', dest='sample',type=int,  default=2000, help='lengt
 parser.add_argument('--ts', dest='t_split',type=float,  default=0.7, help='split training set')
 parser.add_argument('--bs', dest='batch_size', type=int, default=12, help='batch_size')
 parser.add_argument('--m', dest='model', type=str, default="LSTM", help='RNN model')
+parser.add_argument('--mode', dest='train_mode', type=str, default="m2m", help='train model (m2m, m2o)')
+
 
 
 
@@ -61,7 +63,7 @@ from sacred.observers import MongoObserver
 
 from sacred.observers import FileStorageObserver
 
-ex = Experiment('args.model')
+ex = Experiment(args.model)
 if args.observe:
     ex.observers.append(MongoObserver.create( db_name='Recurrent_Nets'))
     ex.observers.append(FileStorageObserver.create('scripts'))
@@ -90,7 +92,7 @@ def configuration():
     t_split=args.t_split
     model_type=args.model #'RNN',,  'GRU' #'LSTM',
     args=args
-
+    train_mode=args.train_mode
 @ex.capture
 def get_info(_run):
     return  _run.experiment_info["name"], _run._id
@@ -100,10 +102,10 @@ def write_config(_run, dic):
 
 
 @ex.main
-def run_main(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size):
+def run_main(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode):
     vis_env=get_info()
     ex.info["vis_env"]=vis_env
-    output=main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, vis_env)
+    output=main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env)
     for key, value in output.items(): 
         ex.info[key]=value
     return output["Test"]
