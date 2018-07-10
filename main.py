@@ -17,6 +17,7 @@ from utils.data import create_dataset, generate_data
 import visdom
 
 def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env):
+    print(args)
     result={}
     if args.visdom_port:
         
@@ -97,6 +98,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
         print('{}: Val. Loss: {:.5f}'.format(model_type, loss.item()))
         #ex.log_scalar("val_loss_{}".format(model_type), loss.item(), ep)
         net.train()
+        result["Val".format(model_type)]= loss.item()
         if args.visdom_port:
 
                 vis.line(
@@ -127,7 +129,6 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
         #ex.log_scalar("test_loss_{}".format(model_type), loss.item(), ep)
         if final:
             result["Test".format(model_type)]= loss.item()
-            
             result["STD".format(model_type)]= np.std(T)
 
         net.train()
@@ -157,7 +158,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
                     
                     title="Validation",
                     showlegend=True,
-                    width=700, 
+                    width=1000, 
                     ), 
                 )
         
@@ -230,9 +231,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
             
             
             print('-'* 20 + ' Epoch {} - {:.2f}% - Time {:.2f}s '.format(e+1, (e+1)/epochs*100, dt) +'-'*20)
-            if (e+1)% np.maximum(1, int(epochs*steps))==0:
-                #val(net, model_type, e+1)
-                test(net, model_type, e+1)
+          
         if args.observe:
             
             torch.save(net, os.path.join(model_path, model_type))
@@ -240,6 +239,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
      
     if args.visdom_port and args.observe:
         vis.save(envs=[environment])
+    val(net, model_type, e+1)
     test(net, model_type,e+1, True)
     return result
 

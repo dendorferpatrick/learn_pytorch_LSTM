@@ -62,8 +62,8 @@ from sacred.observers import MongoObserver
 
 
 from sacred.observers import FileStorageObserver
-
-ex = Experiment(args.model)
+name_ex="{}_hs{}_lb{}_nl{}_mode{}".format( args.model, args.hidden_size, args.history_window, args.number_layer, args.train_mode)
+ex = Experiment(name_ex)
 if args.observe:
     ex.observers.append(MongoObserver.create( db_name='Recurrent_Nets'))
     ex.observers.append(FileStorageObserver.create('scripts'))
