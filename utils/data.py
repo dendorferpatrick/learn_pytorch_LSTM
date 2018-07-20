@@ -1,6 +1,6 @@
 import numpy as np
 
-
+np.random.seed(0)
 def sine_2(X, signal_freq=60.):
 
     return (np.sin(2 * np.pi * (X) / signal_freq) + np.sin(4 * np.pi * (X) / signal_freq)) / 2.0

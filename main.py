@@ -7,19 +7,22 @@ import random
 import torch
 from torch import nn
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
 from NN import model
 import time
 import logging
 import datetime 
 from utils.initialize_logger import init_logger
 from utils.data import create_dataset, generate_data 
+from utils.data_loader import Dataset
 
-import visdom
+
 
 def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env):
     print(args)
     result={}
     if args.visdom_port:
+        import visdom
         
         #os.system('python -m visdom.server -port {} &'.format(args.visdom_port))
         if args.observe:
@@ -60,32 +63,13 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
         title="Dataset"),     
         
         )
-
-    train_X, train_Y, test_X, test_Y , val_X, val_Y= create_dataset(dataset,train_size,  look_back, look_forward)
-    # Convert numpy array to PyTorch tensor
- 
-    train_X = train_X.reshape(look_back, -1, features)
-    train_Y = train_Y.reshape(look_back, -1, features)
-    val_X = val_X.reshape(look_back, -1, features)
-    val_Y = val_Y.reshape(look_back, -1, features)
-   # test_X = test_X.reshape(look_back, -1, features)
-   # test_Y = test_Y.reshape(look_back, -1, features)
-
-    train_x = torch.from_numpy(train_X).cuda()
-    train_y = torch.from_numpy(train_Y).cuda()
-    val_x = torch.from_numpy(val_X).cuda()
-    val_y = torch.from_numpy(val_Y).cuda()
-  #  test_x = torch.from_numpy(test_X).cuda()
-  #  test_y = torch.from_numpy(test_Y).cuda()
-
-    print("Shape train data X: " + str(train_x.size()) )
-    print("Shape train data Y: " + str(train_y.size()))
-    print("Shape val data X: " + str(val_x.size()))
-    print("Shape val data Y: " + str(val_y.size()))
-    # initialize neural nets
+    data_path= "/usr/wiss/dendorfp/dvl/projects/trajnet/data/train/crowds/crowds_zara02.txt"
+    data = Dataset(data_path,  look_back, look_forward)
+    logging.info("{} loaded".format(data_path))
+    loader = DataLoader(data, batch_size=batch_size, num_workers=4, shuffle=True)
+   
     
-    
-
+    """
     def val(net, model_type,  ep, x=val_x, y=val_y):
     
         print('-'* 20 + ' Validation ' +'-'*20)
@@ -113,7 +97,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
 
 
     def test(net, model_type, ep, final=False,  x=val_x, y=val_y, args=args):
-        T={}
+        
        
         print('-'* 20 + ' Test ' +'-'*20)
         
@@ -144,11 +128,12 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
             ), 
                                 )
     
-        
+    """   
     # testing
     if train_bool:
         count=0
         net={} 
+        """
         if args.visdom_port:
             val_plot=vis.line(
                 X=np.arange(len(val_y[-1, :,0])),
@@ -170,7 +155,7 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
                 width=1000,
                 title="Test prediction",
                 ), 
-            )
+        """
         optimizer={} 
        
         net=model(model_type, features, hidden_size, look_forward, num_layer, dropout, batch_size).cuda() 
@@ -189,10 +174,17 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
            
             l=0
         
-            for iter, batch in enumerate(np.arange(0, train_x.size(1), batch_size)):
+            for iter, batch in enumerate(loader):
+                #var_x = torch.from_numpy(batch['X']).cuda()
+                #var_y   = torch.from_numpy(batch['Y']).cuda()
+                var_x = Variable(batch['X']).float().cuda()
+                var_x=var_x.permute(1, 0, 2)
             
-                var_x = Variable(train_x[:,batch:batch+batch_size,:])
-                var_y = Variable(train_y[:,batch:batch+batch_size,:])
+                var_y = Variable(batch['Y']).float().cuda()
+                var_y=var_y.permute(1, 0, 2)
+            
+                #var_x = Variable(train_x[:,batch:batch+batch_size,:])
+                #var_y = Variable(train_y[:,batch:batch+batch_size,:])
                 #h0= torch.zeros(net.num_layers,var_x.size(1), net.hidden_size).cuda()
 
                 out = net(var_x)
@@ -237,10 +229,11 @@ def main_func(features,seed,    look_back, look_forward, hidden_size, num_layer,
             torch.save(net, os.path.join(model_path, model_type))
             print("{} saved to {}".format(model_type, model_path))	
      
+    
+    #val(net, model_type, e+1)
+    #test(net, model_type,e+1, True)
     if args.visdom_port and args.observe:
         vis.save(envs=[environment])
-    val(net, model_type, e+1)
-    test(net, model_type,e+1, True)
     return result
 
   

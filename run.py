@@ -15,7 +15,7 @@ from utils.initialize_logger import init_logger
 from utils.data import create_dataset, generate_data 
 from sacred import Experiment   
 from main import main_func
-import visdom
+
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description="""This notebook demosntrates the three most common types of recurrent neural networks. Namely, we focus on:
 Simple recurrent neural network (RNN) Gated recurrent units (GRU) Long short term memory netowrk (LSTM) 
@@ -30,11 +30,11 @@ parser.add_argument('--test',  dest='test', type=str,
 
 parser.add_argument('--obs',  dest='observe', default=False, action='store_true',
                     help='observe experiement and add to data base')
-parser.add_argument('--lb', dest='history_window',  type=int, default=200, help='look back time window') 
-parser.add_argument('--lf' , dest='prediction_window', type=int, default =  1, help='prediction time horizont') 
+parser.add_argument('--lb', dest='history_window',  type=int, default=8, help='look back time window') 
+parser.add_argument('--lf' , dest='prediction_window', type=int, default = 1, help='prediction time horizont') 
 parser.add_argument('--d', dest='data', type=str, default='sine',  help='data set to be used')
-parser.add_argument('--hs', dest='hidden_size',type=int,  default=150, help='Number of hidden states')  
-parser.add_argument('--nl',dest='number_layer', type=int, default = 3, help='number of RNN layers') 
+parser.add_argument('--hs', dest='hidden_size',type=int,  default=20, help='Number of hidden states')  
+parser.add_argument('--nl',dest='number_layer', type=int, default = 2, help='number of RNN layers') 
 parser.add_argument('--dr',dest='dropout_rate', type=float, default= 0.5, help='dropout rate for training') 
 parser.add_argument('--e', dest='epochs', type=int, default=1000, help='number of training epochs')
 parser.add_argument('--vp', dest='visdom_port',type=int,  default=False, help='port of visdom server')
@@ -65,8 +65,8 @@ from sacred.observers import FileStorageObserver
 name_ex="{}_hs{}_lb{}_nl{}_mode{}".format( args.model, args.hidden_size, args.history_window, args.number_layer, args.train_mode)
 ex = Experiment(name_ex)
 if args.observe:
-    ex.observers.append(MongoObserver.create( db_name='Recurrent_Nets'))
-    ex.observers.append(FileStorageObserver.create('scripts'))
+    ex.observers.append(MongoObserver.create( db_name='traj_RNN'))
+    #ex.observers.append(FileStorageObserver.create('scripts'))
 
 from sacred import SETTINGS
 SETTINGS.CAPTURE_MODE = 'sys'

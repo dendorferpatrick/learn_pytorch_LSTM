@@ -19,7 +19,7 @@ batch=len(input)/4
 print(batch)
 def job(nr, list_commands):
     for i in list_commands:
-        os.system("CUDA_VISIBLE_DEVICE={} python run.py --train --e 50 --obs --mode {} --m {} --lb {} --hs {} --nl {} --lf 1 --vp 8895".format(nr, i[0], i[1], i[2] , i[3],  i[4]))
+        os.system("CUDA_VISIBLE_DEVICE={} python run.py --train --bs 5 --e 50 --obs --mode {} --m {} --lb {} --hs {} --nl {} --lf 1 --vp 8895".format(nr, i[0], i[1], i[2] , i[3],  i[4]))
 
 processes=[mp.Process(target=job, args=(x,input[int(x*batch) : int((x+1)*batch)]))  for x in np.arange(4)]
 
