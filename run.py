@@ -15,6 +15,7 @@ from utils.initialize_logger import init_logger
 from utils.data import create_dataset, generate_data 
 from sacred import Experiment   
 from main import main_func
+import socket
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description="""This notebook demosntrates the three most common types of recurrent neural networks. Namely, we focus on:
@@ -39,13 +40,14 @@ parser.add_argument('--dr',dest='dropout_rate', type=float, default= 0.5, help='
 parser.add_argument('--e', dest='epochs', type=int, default=1000, help='number of training epochs')
 parser.add_argument('--vp', dest='visdom_port',type=int,  default=False, help='port of visdom server')
 parser.add_argument('--ft', dest='future',type=int,  default=10, help='future time window')
-parser.add_argument('--feat', dest='features',type=int,  default=1, help='number of features')
+parser.add_argument('--feat', dest='features',type=int,  default=2, help='number of features')
 parser.add_argument('--samp', dest='sample',type=int,  default=2000, help='length of dataset')
-parser.add_argument('--ts', dest='t_split',type=float,  default=0.7, help='split training set')
+parser.add_argument('--ts', dest='t_split',type=float,  default=0.8, help='split training set')
 parser.add_argument('--bs', dest='batch_size', type=int, default=12, help='batch_size')
 parser.add_argument('--m', dest='model', type=str, default="LSTM", help='RNN model')
 parser.add_argument('--mode', dest='train_mode', type=str, default="m2m", help='train model (m2m, m2o)')
-
+parser.add_argument('--debug', dest="debug", default=False, action='store_true',
+                    help='debugging mode')
 
 
 
@@ -53,6 +55,9 @@ parser.add_argument('--mode', dest='train_mode', type=str, default="m2m", help='
 
 args = parser.parse_args()
 print(args)
+
+if not args.debug:
+    logging.disable(logging.DEBUG)
 
 if args.visdom_port:
     import visdom
@@ -62,11 +67,15 @@ from sacred.observers import MongoObserver
 
 
 from sacred.observers import FileStorageObserver
-name_ex="{}_hs{}_lb{}_nl{}_mode{}".format( args.model, args.hidden_size, args.history_window, args.number_layer, args.train_mode)
+name_ex="{}_hs{}_nl{}".format( args.model, args.hidden_size, args.number_layer)
 ex = Experiment(name_ex)
 if args.observe:
-    ex.observers.append(MongoObserver.create( db_name='traj_RNN'))
-    #ex.observers.append(FileStorageObserver.create('scripts'))
+    host=socket.gethostname()
+    dir_scripts="scripts/{}".format(host)
+    if not os.path.exists(dir_scripts):
+                os.makedirs(dir_scripts)
+    ex.observers.append(MongoObserver.create( db_name='traj_RNN_{}'.format(host)))
+    ex.observers.append(FileStorageObserver.create(dir_scripts))
 
 from sacred import SETTINGS
 SETTINGS.CAPTURE_MODE = 'sys'
@@ -105,11 +114,12 @@ def write_config(_run, dic):
 def run_main(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode):
     vis_env=get_info()
     ex.info["vis_env"]=vis_env
-    output=main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env)
+    main_func(features,seed,    look_back, look_forward, hidden_size, num_layer, dropout, future , epochs, train_bool, test_bool, args, sample_size,t_split, model_type,batch_size, train_mode, vis_env)
+    """
     for key, value in output.items(): 
         ex.info[key]=value
     return output["Test"]
-    
+    """
 if __name__ == '__main__':
     run=ex.run()
   

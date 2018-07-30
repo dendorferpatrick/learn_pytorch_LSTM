@@ -11,133 +11,88 @@ import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import utils
+import logging
+import glob
+from random import shuffle
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
+def get_txt_files(base_dir):
+    return glob.iglob(f"{base_dir}/**/*.txt", recursive=True)
+
+def load_data(phase="train", path_data='/usr/wiss/dendorfp/dvl/projects/trajnet/data'): 
+        if phase=="train":
+            path=os.path.join(path_data, "train")
+        elif phase == "test":
+            path= os.path.join(path_data, "test")
+        else:
+            print("no valid phase")
+        
+        scale=np.loadtxt(os.path.join(path_data, "scale_{}.txt".format(phase)))
+        data = get_txt_files(path )
+        data_raw=pd.DataFrame()
+        i=0
+        for csv_file in data:
+            
+            data_raw=data_raw.append(pd.read_csv(csv_file, header=None, delimiter=" "))
+            logging.info("{} loaded".format(csv_file))
+        i+=1
+        data_raw.columns=['frame', 'ID', 'x', 'y']
+        return data_raw, scale
 
 
 class Dataset(Dataset):
-
-    def __init__(self, csv_file,  seq_len,predict, phase='train'):
-        self.data_raw      = pd.read_csv(csv_file, header=None, delimiter=" ")
-        self.data_raw.columns=['frame', 'ID', 'x', 'y']
-        #self.data_raw=self.data_raw[self.data_raw.lost==0]
+    def __init__(self, seq_len,predict, phase="train", val_split= 0.2, shuffle_data=True):
+        self.data_raw, self.scale=load_data(phase=phase)
+        self.data_raw=self.data_raw
         self.max_frame=self.data_raw.groupby('ID')['frame'].count().max()
-        
         self.seq_len     = seq_len
         self.predict   =predict
         if self.max_frame < self.seq_len + self.predict: 
             print("ERROR: not enough frames for look back and look forward. Choose smaller time windows. Max number of frames %s" % self.max_frame)
             
-        self.number_of_ind= self.data_raw['ID'].max()
-        self.data_X=[]
+        self.ID= self.data_raw['ID'].unique()
+        self.data=[]
         self.data_Y=[]
         self.frame=[]
-        for index, ind in enumerate(np.arange(self.number_of_ind)):#self.number_of_ind-)):
-            df=self.data_raw[self.data_raw.ID==ind]
-            
-            df_ind= df.values
-            
-            for i in range(np.maximum(0, len(df_ind) - self.seq_len- self.predict+1)):
-                self.frame.append(df_ind[i, 0])
-             
-                self.data_X.append(df_ind[i:(i + self.seq_len), -2:])
-                self.data_Y.append(df_ind[i + self.seq_len:(i + self.seq_len+self.predict), -2:])
-              
-        self.data_X=np.array(self.data_X).transpose(1,0,2)
-        self.data_Y=np.array(self.data_Y).transpose(1,0,2)
-    
-        self.data_X=self.data_X*1./self.data_X.max()
+        logger.debug("data loaded")
+
       
-        self.data_Y=self.data_Y*1./self.data_X.max()
-
-        
-        self.diff_X=self.data_X[:, 1:, :]-self.data_X[:, :-1, :]
-        self.diff_Y=self.data_Y[:, 1:, :]-self.data_Y[:, :-1, :]
-
-        self.max_diff= abs(self.diff_X).max()
-
-        self.diff_X=self.data_X*1./self.max_diff
-        self.diff_Y=self.data_Y*1./self.max_diff
-
-
-
+        for index, ind in enumerate(self.ID):#self.number_of_ind-)):
+            df=self.data_raw[self.data_raw.ID==ind]    
+            df_ind= df.values
+            velocity=df_ind[1:,-2:]-df_ind[:-1,-2:]
+            for i in range(np.maximum(0, len(df_ind) - self.seq_len- self.predict+1)):
+            #self.frame.append(df_ind[i, 0])
+                x=-1 + 2*np.divide((-self.scale[1, :2]+df_ind[i:i+self.seq_len, -2:]),(self.scale[0, :2]-self.scale[1, :2]))
+                y=-1+2*np.divide((-self.scale[1, :2]+df_ind[i+self.seq_len:i+self.seq_len+self.predict, -2:]),(self.scale[0, :2]-self.scale[1, :2]))
+                
+                if i < np.maximum(0, len(df_ind) - self.seq_len - self.predict+1):
+                    diff_x=-1 + 2*np.divide((-self.scale[1, 2:]+velocity[i:i+self.seq_len-1,  -2:]),(self.scale[0, 2:]-self.scale[1, 2:]))
+                    diff_y=-1+2*np.divide((-self.scale[1, 2:]+velocity[i+self.seq_len-1:i+self.seq_len-1+self.predict, -2:]),(self.scale[0, 2:]-self.scale[1, 2:]))
+                
+                
+                self.data.append([x,y, diff_x, diff_y])
+        logger.debug("size data x {0} y {1} vx {2} vy {3}".format(np.shape(self.data[0][0]), np.shape(self.data[0][1]), np.shape(self.data[0][2]),np.shape(self.data[0][3])))
+        if shuffle_data:
+            shuffle(self.data)
+        self.train=self.data[:int((1-val_split)*len(self.data))]
+        self.val=self.data[int(val_split*len(self.data)):]
+       
+class Loader():
+    def __init__(self, data):
+        self.data=data
     def __len__(self):
-        return np.shape(self.data_X)[1]
+        return len(self.data)
 
     def __getitem__(self, idx):
 
-        X = self.data_X[:, idx, :]
-        Y = self.data_Y[:, idx, :]
-        frame= self.frame[idx]
-        diff_X=self.diff_X[:, idx, :]
-        diff_Y= self.diff_Y[:, idx, :]
+        X = self.data[idx][0]
+        Y = self.data[idx][1]
+     #   frame= self.frame[idx]
+        diff_X=self.data[idx][2]
+        diff_Y= self.data[idx][3]
 
-    
-
-        
-       
-        sample = {'X': X, 'Y': Y, 'F': frame, 'diff_X': diff_X, 'diff_Y': diff_Y}
+        sample = {'X': X, 'Y': Y, 'diff_X': diff_X, 'diff_Y': diff_Y}
 
         return sample
-
-
-
-
-
-
-"""
-if __name__ == "__main__":
-
-
-    path= 'data/centers_hyang_video0.csv'
-    steps=300
-    data= Dataset( path, steps, 3)
-    loader = DataLoader(data, batch_size=1, num_workers=8, shuffle=True)
-    import matplotlib.pyplot as plt
-    import cv2
-    path_video='videos/hyang/video0/video.mov'
-    cap = cv2.VideoCapture(path_video)
-
-    img_path='/Users/patrickdendorfer/phd/trajectory/annotations/hyang/video0/reference.jpg'
-    for item , batch in enumerate(loader):
-        cap = cv2.VideoCapture(path_video)
-        cap.set(1,batch['F'][0])
-        frame_nr=0
-        plot=False 
-        k=0
-        scale=0.4
-        print(batch['F'][0])
-        while(True):
-            ret, frame = cap.read()
-            index=np.where(batch['F'].data.cpu().numpy()==frame_nr)[0]
-            #print(batch['X'].size())
-            
-            plot=True
-            
-            if k==steps:
-                    break
-            if plot:
-                coor_center= (int(batch['X'][0,k, 0].item()),int(batch['X'][0,k, 1].item()))
-                print(coor_center)
-                cv2.circle(frame, coor_center, 10, (0,255,0) , -1)
-                k+=1
-            
-                size=frame.shape
-                frame=cv2.resize(frame, (int(scale* size[1]), int(scale*size[0])))
-                cv2.imshow('Title',frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-            
-            frame_nr+=+1
-        cap.release()
-        cv2.destroyAllWindows()
-
-    # When everything done, release the capture
-
-
-    img=plt.imread(img_path)
-    print(batch['F'])
-
-    plt.imshow(img)
-    plt.plot(np.array(batch['X'][:,:, 0].data.cpu().numpy()[0] ),np.array(batch['X'][:,:, 1].data.cpu().numpy()[0] ))
-    plt.show()
-    """
