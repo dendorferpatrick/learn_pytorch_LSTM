@@ -1,31 +1,40 @@
-import os
+import multiprocessing
 import itertools
-import random
-import multiprocessing as mp 
-import numpy as np
-
-epochs=200
-mode=["m2o", "m2m"]
-models=['LSTM', 'GRU', 'RNN']
-timewindow_val=[50, 100, 150, 200]
-hidden_states_val=[25, 50, 75, 100]
-layers_val=[1,2]
+import os
+import argparse
 
 
-input=list(itertools.product(*[mode, models, timewindow_val, hidden_states_val, layers_val]))
-random.shuffle(input)
+parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter)
 
-batch=len(input)/4
-print(batch)
-def job(nr, list_commands):
-    for i in list_commands:
-        os.system("CUDA_VISIBLE_DEVICE={} python run.py --train --bs 5 --e 50 --obs --mode {} --m {} --lb {} --hs {} --nl {} --lf 1 --vp 8895".format(nr, i[0], i[1], i[2] , i[3],  i[4]))
 
-processes=[mp.Process(target=job, args=(x,input[int(x*batch) : int((x+1)*batch)]))  for x in np.arange(4)]
+#parser.add_argument('--hs', dest='hidden_states',  default=False, help='Number of hidden states')  
+parser.add_argument('--nn',dest='NN', type=int,  default = False, help='neural net model') 
+parser.add_argument('--gpu',dest='GPU', type=int,  default= False, help='GPU') 
+args = parser.parse_args()
+print(args)
 
-# Run processes
-for p in processes:
-    p.start()
 
-for p in processes:
-    p.join()
+def call_command(input):
+    if input[2]==2:
+        model_name= "constant_velocity"
+    elif input[2]==3:
+        model_name= "variable_velocity"
+    elif input[2]==1:
+        model_name= "acceleration+const_velocity"
+    command="CUDA_VISIBLE_DEVICES={} python run.py --seq 8 --pred 12 --e 500 --hs {}  --bs 8 --nl 1  --obs --model NN{} --m {}".format(input[0], input[1], input[2],  model_name)
+    os.system(command)
+
+
+if __name__ == '__main__':
+    jobs = []
+    GPU=[args.GPU]
+    hidden_states=[5,15,25,40]
+    NN=[args.NN]
+    input=list(itertools.product(*[GPU, hidden_states, NN]))
+    print(input)
+    for i in input:
+        print(i)
+        p = multiprocessing.Process(target=call_command, args=(i,))
+        jobs.append(p)
+        p.start()
+
